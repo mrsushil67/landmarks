@@ -7,45 +7,59 @@ export default function FaceLandmarkerComponent() {
     const webcamRef = useRef<Webcam>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const landmarkerRef = useRef<FaceLandmarker | null>(null);
+    const lastVideoTime = useRef<number>(-1);
+    const requestRef = useRef<number>(0);
 
     const predict = useCallback(() => {
         const video = webcamRef.current?.video;
         const canvas = canvasRef.current;
 
-        if (video?.readyState === 4 && landmarkerRef.current && canvas) {
-            // 1. Sync canvas size to video size for accurate coordinate mapping
-            if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-            }
+        if (video && video.readyState === 4 && landmarkerRef.current && canvas) {
+            // Only process if the video frame has actually progressed
+            if (video.currentTime !== lastVideoTime.current) {
+                lastVideoTime.current = video.currentTime;
 
-            const results = landmarkerRef.current.detectForVideo(video, performance.now());
-            const ctx = canvas.getContext("2d");
-
-            if (ctx && results.faceLandmarks) {
-                ctx.save();
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                
-                // 2. Mirror the canvas context to match the mirrored webcam
-                ctx.translate(canvas.width, 0);
-                ctx.scale(-1, 1);
-
-                const drawingUtils = new DrawingUtils(ctx);
-                for (const landmarks of results.faceLandmarks) {
-                    drawingUtils.drawConnectors(
-                        landmarks, 
-                        FaceLandmarker.FACE_LANDMARKS_TESSELATION, 
-                        { color: "#C0C0C070", lineWidth: 1 }
-                    );
+                // Sync canvas internal resolution to video stream resolution
+                if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
                 }
-                ctx.restore();
+
+                const results = landmarkerRef.current.detectForVideo(video, performance.now());
+                const ctx = canvas.getContext("2d");
+
+                if (ctx && results.faceLandmarks) {
+                    ctx.save();
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Mirror the drawing to match the mirrored webcam display
+                    ctx.translate(canvas.width, 0);
+                    ctx.scale(-1, 1);
+
+                    const drawingUtils = new DrawingUtils(ctx);
+                    
+                    for (const landmarks of results.faceLandmarks) {
+                        // 1. Draw the detailed face mesh tessellation
+                        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "#C0C0C070", lineWidth: 1 });
+                        
+                        // 2. Draw specific feature sets for a "Pro" look
+                        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, { color: "#FF3030" });
+                        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, { color: "#30FF30" });
+                        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: "#E0E0E0", lineWidth: 2 });
+                        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_LIPS, { color: "#E0E0E0" });
+                        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS, { color: "#FF3030" });
+                        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS, { color: "#30FF30" });
+                    }
+                    ctx.restore();
+                }
             }
         }
-        requestAnimationFrame(predict);
+        requestRef.current = requestAnimationFrame(predict);
     }, []);
 
     useEffect(() => {
         const initModel = async () => {
+            // Ensure local WASM assets are used for 2025 stability
             const vision = await FilesetResolver.forVisionTasks("/wasm");
 
             landmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
@@ -54,23 +68,29 @@ export default function FaceLandmarkerComponent() {
                     delegate: "GPU"
                 },
                 runningMode: "VIDEO",
-                numFaces: 1
+                numFaces: 1,
+                outputFaceBlendshapes: true, // Useful for 2025 graph stability
             });
             
-            // 3. Start the loop immediately after the model is ready
-            requestAnimationFrame(predict);
+            requestRef.current = requestAnimationFrame(predict);
         };
 
         initModel();
-    }, [predict]); // Include predict here to ensure loop starts with correct ref
+
+        // Cleanup on unmount to prevent memory leaks/zombie loops
+        return () => {
+            if (requestRef.current) cancelAnimationFrame(requestRef.current);
+            landmarkerRef.current?.close();
+        };
+    }, [predict]);
 
     return (
-        <div className="relative group overflow-hidden rounded-3xl border-4 border-white shadow-2xl bg-black">
+        <div className="relative group overflow-hidden rounded-3xl border-4 border-white shadow-2xl bg-black aspect-video">
             <Webcam 
                 ref={webcamRef} 
-                className="w-full h-auto block" 
+                className="w-full h-full object-cover" 
                 mirrored 
-                videoConstraints={{ width: 1280, height: 720 }}
+                videoConstraints={{ width: 1280, height: 720, facingMode: "user" }}
             />
             <canvas 
                 ref={canvasRef} 
