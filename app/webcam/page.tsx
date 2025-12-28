@@ -1,22 +1,19 @@
-import WebcamDisplay from "@/app/components/features/webcam/WebcamDisplay";
+import FaceLandmarker from "@/app/components/features/webcam/FaceLandmarker";
 
-export const metadata = {
-  title: "Webcam App | Next.js 16",
-  description: "Secure browser-based camera capture",
-};
-
-export default function WebcamPage() {
+export default async function WebcamPage() {
+  // Next.js 16 'use cache' marks this segment for instant delivery
+  "use cache"; 
+  
   return (
-    <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-8">
-      <h1 className="text-3xl font-bold mb-8 text-gray-900">Camera Interface</h1>
-      
-      {/* Wrapper for layout and instructions */}
-      <div className="w-full max-w-4xl bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
-        <p className="text-sm text-center text-gray-500 mb-6">
-          Please allow camera permissions in your browser when prompted.
-        </p>
+    <main className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
+      <div className="max-w-3xl w-full space-y-6">
+        <header className="text-center">
+          <h1 className="text-4xl font-black text-white tracking-tight">AI Vision Pro</h1>
+          <p className="text-slate-400">Next.js 16 Real-time 478-point Mesh Detection</p>
+        </header>
         
-        <WebcamDisplay />
+        {/* The interactive client component */}
+        <FaceLandmarker />
       </div>
     </main>
   );
